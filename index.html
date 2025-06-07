@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manajemen Stok Koper</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Menambahkan ikon Bootstrap untuk tombol Edit/Hapus -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { max-width: 960px; }
+        .card { box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075); }
+        /* Style untuk tombol aksi agar tidak terlalu mepet */
+        .action-buttons a { margin: 0 4px; }
+    </style>
+</head>
+<body>
+
+    <div class="container my-5">
+        <header class="text-center mb-5">
+            <h1>Manajemen Stok Koper</h1>
+            <p class="lead text-muted">Aplikasi CRUD sederhana dengan Laravel API & jQuery</p>
+        </header>
+
+        <main>
+            <!-- Area Notifikasi -->
+            <div id="app-notification" class="mb-3"></div>
+
+            <!-- Form Tambah -->
+            <div class="card mb-4">
+                <div class="card-header">Form Tambah Produk</div>
+                <div class="card-body">
+                    <form id="form-add-product">
+                        <div class="row">
+                            <div class="col-md-6 mb-3"><input type="text" class="form-control" id="add_nama_produk" required placeholder="Nama Produk"></div>
+                            <div class="col-md-6 mb-3"><input type="text" class="form-control" id="add_kode_produk" required placeholder="Kode Produk"></div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3"><input type="number" class="form-control" id="add_harga" required placeholder="Harga"></div>
+                            <div class="col-md-6 mb-3"><input type="number" class="form-control" id="add_stok" required placeholder="Stok"></div>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="btn-submit-add">
+                            <span class="spinner-border spinner-border-sm d-none"></span> Simpan
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tabel Data -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Daftar Produk</span>
+                    <div class="w-50">
+                        <input type="text" id="search-query" class="form-control form-control-sm" placeholder="Cari produk...">
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="table-loader" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th><th>Nama Produk</th><th>Kode</th><th>Harga</th><th>Stok</th><th class="text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="product-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Edit -->
+    <div class="modal fade" id="modal-edit" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header"><h5 class="modal-title">Edit Produk</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body">
+            <form id="form-edit-product">
+              <input type="hidden" id="edit_id">
+              <div class="mb-3"><label class="form-label">Nama Produk</label><input type="text" class="form-control" id="edit_nama_produk" required></div>
+              <div class="mb-3"><label class="form-label">Kode Produk</label><input type="text" class="form-control" id="edit_kode_produk" required></div>
+              <div class="mb-3"><label class="form-label">Harga</label><input type="number" class="form-control" id="edit_harga" required></div>
+              <div class="mb-3"><label class="form-label">Stok</label><input type="number" class="form-control" id="edit_stok" required></div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button type="button" class="btn btn-success" id="btn-submit-edit">
+                <span class="spinner-border spinner-border-sm d-none"></span> Simpan Perubahan
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+    // Membungkus semua logika dalam sebuah IIFE (Immediately Invoked Function Expression)
+    // Ini adalah pola umum untuk mencegah polusi variabel global.
+    (function($) {
+        'use strict';
+
+        // =================================================================
+        // APLIKASI UTAMA: ManajemenProduk
+        // =================================================================
+        const ManajemenProduk = {
+            // --- Konfigurasi ---
+            config: {
+                apiUrl: 'http://127.0.0.1:8000/api/products',
+                elements: {
+                    tableBody: $('#product-table-body'),
+                    loader: $('#table-loader'),
+                    notification: $('#app-notification'),
+                    formAdd: $('#form-add-product'),
+                    formEdit: $('#form-edit-product'),
+                    modalEdit: new bootstrap.Modal(document.getElementById('modal-edit')),
+                    searchBox: $('#search-query')
+                },
+                debounceTimer: null
+            },
+
+            // --- Inisialisasi Aplikasi ---
+            init: function() {
+                this.bindEvents();
+                this.loadProducts();
+            },
+
+            // --- Pengikat Event (Event Binders) ---
+            bindEvents: function() {
+                this.config.elements.formAdd.on('submit', this.handleFormSubmit.bind(this));
+                this.config.elements.tableBody.on('click', '.btn-edit', this.handleEditClick.bind(this));
+                this.config.elements.tableBody.on('click', '.btn-delete', this.handleDeleteClick.bind(this));
+                $('#btn-submit-edit').on('click', this.handleUpdateSubmit.bind(this));
+                this.config.elements.searchBox.on('keyup', this.handleSearch.bind(this));
+            },
+
+            // --- Logika Inti (Core Logic) ---
+            loadProducts: function(query = '') {
+                const self = this;
+                self.config.elements.loader.show();
+                
+                $.ajax({
+                    url: `${self.config.apiUrl}?search=${query}`,
+                    method: 'GET',
+                    dataType: 'json',
+                    success: function(res) {
+                        self.renderTable(res.data);
+                    },
+                    error: function() {
+                        self.displayNotification('Koneksi ke server gagal.', 'danger');
+                    },
+                    complete: function() {
+                        self.config.elements.loader.hide();
+                    }
+                });
+            },
+
+            renderTable: function(products) {
+                const self = this;
+                self.config.elements.tableBody.empty();
+                
+                if (products && products.length > 0) {
+                    $.each(products, function(i, product) {
+                        const row = `
+                            <tr class="align-middle">
+                                <td>${product.id}</td>
+                                <td>${product.nama_produk}</td>
+                                <td>${product.kode_produk}</td>
+                                <td>${self.util.formatCurrency(product.harga)}</td>
+                                <td>${product.stok}</td>
+                                <td class="text-center action-buttons">
+                                    <a href="#" class="btn-edit" data-product='${JSON.stringify(product)}' title="Edit"><i class="bi bi-pencil-fill text-warning"></i></a>
+                                    <a href="#" class="btn-delete" data-id="${product.id}" data-name="${product.nama_produk}" title="Hapus"><i class="bi bi-trash-fill text-danger"></i></a>
+                                </td>
+                            </tr>`;
+                        self.config.elements.tableBody.append(row);
+                    });
+                } else {
+                    self.config.elements.tableBody.html(`<tr><td colspan="6" class="text-center text-muted">Data tidak ditemukan.</td></tr>`);
+                }
+            },
+
+            // --- Penanganan Aksi (Action Handlers) ---
+            handleFormSubmit: function(e) {
+                e.preventDefault();
+                const btn = $('#btn-submit-add');
+                this.util.toggleLoading(btn, true);
+
+                const newProduct = {
+                    nama_produk: $('#add_nama_produk').val(),
+                    kode_produk: $('#add_kode_produk').val(),
+                    harga: $('#add_harga').val(),
+                    stok: $('#add_stok').val(),
+                };
+
+                const self = this;
+                $.ajax({
+                    url: self.config.apiUrl,
+                    method: 'POST',
+                    data: newProduct,
+                    success: function(res) {
+                        self.displayNotification(res.message, 'success');
+                        self.config.elements.formAdd[0].reset();
+                        self.loadProducts();
+                    },
+                    error: self.util.handleAjaxError.bind(self),
+                    complete: function() {
+                        self.util.toggleLoading(btn, false);
+                    }
+                });
+            },
+
+            handleEditClick: function(e) {
+                e.preventDefault();
+                const productData = $(e.currentTarget).data('product');
+                $('#edit_id').val(productData.id);
+                $('#edit_nama_produk').val(productData.nama_produk);
+                $('#edit_kode_produk').val(productData.kode_produk);
+                $('#edit_harga').val(productData.harga);
+                $('#edit_stok').val(productData.stok);
+                this.config.elements.modalEdit.show();
+            },
+
+            handleUpdateSubmit: function() {
+                const btn = $('#btn-submit-edit');
+                this.util.toggleLoading(btn, true);
+                const id = $('#edit_id').val();
+
+                const updatedProduct = {
+                    nama_produk: $('#edit_nama_produk').val(),
+                    kode_produk: $('#edit_kode_produk').val(),
+                    harga: $('#edit_harga').val(),
+                    stok: $('#edit_stok').val(),
+                };
+
+                const self = this;
+                $.ajax({
+                    url: `${self.config.apiUrl}/${id}`,
+                    method: 'PUT',
+                    data: updatedProduct,
+                    success: function(res) {
+                        self.displayNotification(res.message, 'success');
+                        self.config.elements.modalEdit.hide();
+                        self.loadProducts();
+                    },
+                    error: self.util.handleAjaxError.bind(self),
+                    complete: function() {
+                        self.util.toggleLoading(btn, false);
+                    }
+                });
+            },
+
+            handleDeleteClick: function(e) {
+                e.preventDefault();
+                const id = $(e.currentTarget).data('id');
+                const name = $(e.currentTarget).data('name');
+
+                if (confirm(`Yakin ingin menghapus produk: "${name}"?`)) {
+                    const self = this;
+                    $.ajax({
+                        url: `${self.config.apiUrl}/${id}`,
+                        method: 'DELETE',
+                        success: function(res) {
+                            self.displayNotification(res.message, 'success');
+                            self.loadProducts();
+                        },
+                        error: function() {
+                            self.displayNotification('Gagal menghapus produk.', 'danger');
+                        }
+                    });
+                }
+            },
+
+            handleSearch: function(e) {
+                clearTimeout(this.config.debounceTimer);
+                const query = $(e.currentTarget).val();
+                const self = this;
+                
+                // Debounce: Tunggu 300ms setelah user berhenti mengetik baru jalankan search
+                this.config.debounceTimer = setTimeout(function() {
+                    self.loadProducts(query);
+                }, 300);
+            },
+
+            // --- Utilitas (Utility Functions) ---
+            util: {
+                formatCurrency: function(num) {
+                    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num);
+                },
+                toggleLoading: function(btn, isLoading) {
+                    btn.prop('disabled', isLoading).find('.spinner-border').toggleClass('d-none', !isLoading);
+                },
+                handleAjaxError: function(xhr) {
+                    let msg = 'Terjadi kesalahan.';
+                    if (xhr.status === 422 && xhr.responseJSON.errors) {
+                        msg = Object.values(xhr.responseJSON.errors).flat().join('<br>');
+                    }
+                    this.displayNotification(msg, 'danger');
+                },
+                // Ganti nama fungsi 'showNotification' agar lebih unik
+                displayNotification: function(msg, type) {
+                    const alert = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">${msg}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
+                    this.config.elements.notification.html(alert);
+                }
+            }
+        };
+
+        // --- Jalankan Aplikasi ---
+        ManajemenProduk.init();
+
+    })(jQuery);
+    </script>
+</body>
+</html>
